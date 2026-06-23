@@ -1,0 +1,9 @@
+streamlit
+faster-whisper
+rapidfuzz
+pydub
+moviepy
+pandas
+numpy
+python-dotenv
+

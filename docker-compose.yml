@@ -1,0 +1,11 @@
+services:
+  storycut:
+    build: .
+    container_name: storycut
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+
