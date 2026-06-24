@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-import json
 from pathlib import Path
 from typing import Any, Callable
 
 from .config import OUTPUTS_DIR, SHORTS_DIR, DEFAULT_END_PADDING_SECONDS, DEFAULT_MATCH_THRESHOLD, DEFAULT_START_PADDING_SECONDS
 from .subtitle_generator import build_events, write_ass, write_srt
 from .text_matcher import ClipMatch, find_clip_match
-from .transcriber import TranscriptSegment, save_transcript, transcribe_media
+from .transcriber import TranscriptSegment, transcribe_media
 from .utils import ensure_parent, ffmpeg_filter_escape_path, find_executable, run_command, unique_path, write_json
 
 
@@ -47,19 +45,37 @@ def _render_short_video(
     start: float,
     end: float,
     subtitle_path: Path | None = None,
+    zoom_out: float = 0.0,
     fps: int = 30,
 ) -> Path:
     ffmpeg = find_executable("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg was not found on PATH.")
     ensure_parent(output_path)
-    filters = [
-        "scale=1080:1920:force_original_aspect_ratio=increase",
-        "crop=1080:1920",
-    ]
-    if subtitle_path is not None:
-        filters.append(f"ass='{ffmpeg_filter_escape_path(subtitle_path)}'")
-    filter_chain = ",".join(filters)
+    zoom_out = max(0.0, min(float(zoom_out), 0.9))
+    if zoom_out <= 0.0:
+        filters = [
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[vbase]",
+        ]
+        if subtitle_path is not None:
+            filters.append(f"[vbase]ass='{ffmpeg_filter_escape_path(subtitle_path)}'[vout]")
+        else:
+            filters.append("[vbase]null[vout]")
+    else:
+        foreground_height = max(2, int(round(1920 * (1.0 - zoom_out))))
+        if foreground_height % 2 == 1:
+            foreground_height -= 1
+        filters = [
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,split=2[fgbase][bgsrc]",
+            "[bgsrc]boxblur=20:1[bg]",
+            f"[fgbase]crop=1080:{foreground_height}:0:(ih-{foreground_height})/2[fg]",
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2[vbase]",
+        ]
+        if subtitle_path is not None:
+            filters.append(f"[vbase]ass='{ffmpeg_filter_escape_path(subtitle_path)}'[vout]")
+        else:
+            filters.append("[vbase]null[vout]")
+    filter_chain = ";".join(filters)
     run_command(
         [
             ffmpeg,
@@ -70,8 +86,12 @@ def _render_short_video(
             str(max(1.0, end - start)),
             "-i",
             str(media_path),
-            "-vf",
+            "-filter_complex",
             filter_chain,
+            "-map",
+            "[vout]",
+            "-map",
+            "0:a?",
             "-r",
             str(fps),
             "-c:v",
@@ -101,12 +121,27 @@ def generate_short_from_text(
     end_padding_seconds: float = DEFAULT_END_PADDING_SECONDS,
     start_threshold: int = DEFAULT_MATCH_THRESHOLD,
     end_threshold: int = DEFAULT_MATCH_THRESHOLD,
+    subtitle_color: str = "#FFFFFF",
+    subtitle_highlight_color: str = "#3B82F6",
+    subtitle_font_size: int = 84,
+    subtitle_outline_size: int = 5,
+    subtitle_shadow_size: int = 2,
+    subtitle_margin_v: int = 260,
+    subtitle_spacing: float = 0.4,
+    zoom_out: float = 0.0,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     _emit_progress(progress_callback, "transcribing", 1, 6)
-    transcript = transcribe_media(media_path, model_name=model_name, language=language, device=device)
+    transcript = transcribe_media(
+        media_path,
+        model_name=model_name,
+        language=language,
+        device=device,
+        progress_callback=progress_callback,
+    )
     segments: list[TranscriptSegment] = transcript["segments"]
+    transcript_path = Path(transcript["cache_path"])
 
     _emit_progress(progress_callback, "matching_excerpt", 2, 6)
     match: ClipMatch = find_clip_match(
@@ -125,20 +160,35 @@ def generate_short_from_text(
     short_srt = output_dir / f"{short_stem}.srt"
     short_meta = output_dir / f"{short_stem}_metadata.json"
     short_thumb = output_dir / f"{short_stem}_thumbnail_frame.jpg"
-    transcript_path = output_dir / f"{short_stem}_transcript.json"
 
     _emit_progress(progress_callback, "building_subtitles", 3, 6)
     events = build_events(segments, clip_start, clip_end, max_words=6)
-    write_ass(short_ass, events)
+    write_ass(
+        short_ass,
+        events,
+        subtitle_color=subtitle_color,
+        highlight_color=subtitle_highlight_color,
+        font_size=subtitle_font_size,
+        outline_size=subtitle_outline_size,
+        shadow_size=subtitle_shadow_size,
+        margin_v=subtitle_margin_v,
+        spacing=subtitle_spacing,
+    )
     write_srt(short_srt, events)
 
     _emit_progress(progress_callback, "rendering_video", 4, 6)
-    _render_short_video(media_path, short_mp4, clip_start, clip_end, subtitle_path=short_ass)
+    _render_short_video(
+        media_path,
+        short_mp4,
+        clip_start,
+        clip_end,
+        subtitle_path=short_ass,
+        zoom_out=zoom_out,
+    )
 
     _emit_progress(progress_callback, "building_thumbnail", 5, 6)
     _render_thumbnail(media_path, short_thumb, (clip_start + clip_end) / 2)
     _emit_progress(progress_callback, "saving_metadata", 6, 6)
-    save_transcript(transcript_path, transcript)
 
     payload = {
         "title": title,
@@ -148,10 +198,19 @@ def generate_short_from_text(
         "end": clip_end,
         "device": transcript.get("device"),
         "requested_device": transcript.get("requested_device", device),
+        "cache_hit": transcript.get("cache_hit", False),
         "match_start_score": match.start_score,
         "match_end_score": match.end_score,
         "start_phrase": match.start_phrase,
         "end_phrase": match.end_phrase,
+        "subtitle_color": subtitle_color,
+        "subtitle_highlight_color": subtitle_highlight_color,
+        "subtitle_font_size": subtitle_font_size,
+        "subtitle_outline_size": subtitle_outline_size,
+        "subtitle_shadow_size": subtitle_shadow_size,
+        "subtitle_margin_v": subtitle_margin_v,
+        "subtitle_spacing": subtitle_spacing,
+        "zoom_out": zoom_out,
         "output_file": str(short_mp4),
         "subtitle_file": str(short_ass),
         "srt_file": str(short_srt),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 
 import streamlit as st
@@ -77,6 +78,7 @@ TRANSLATIONS = {
         "progress_audio_title": "Processando limpeza de audio...",
         "progress_audio_loading_model": "Carregando modelo Whisper",
         "progress_audio_transcribing": "Transcrevendo audio",
+        "progress_audio_transcription_cached": "Usando transcricao em cache",
         "progress_audio_detecting_silences": "Detectando silencias",
         "progress_audio_detecting_duplicates": "Procurando trechos duplicados",
         "progress_audio_rendering_audio": "Montando audio limpo",
@@ -99,12 +101,23 @@ TRANSLATIONS = {
         "short_excerpt_placeholder": "Cole o trecho exato que deseja localizar na transcricao.",
         "start_padding": "Margem inicial (s)",
         "end_padding": "Margem final (s)",
+        "zoom_out": "Zoom out do video",
+        "zoom_out_help": "Aumente para abrir espaco apenas no topo e no rodape com fundo desfocado.",
+        "subtitle_color": "Cor da legenda",
+        "subtitle_highlight_color": "Cor de destaque",
+        "subtitle_font_size": "Tamanho da fonte",
+        "subtitle_outline_size": "Espessura do contorno",
+        "subtitle_shadow_size": "Sombra",
+        "subtitle_margin_v": "Posição vertical",
+        "subtitle_spacing": "Espaçamento entre letras",
+        "subtitle_style": "Estilo da legenda",
         "match_threshold": "Limite de correspondencia",
         "generate_shorts": "Gerar Shorts",
         "short_generated": "Short gerado com sucesso.",
         "progress_shorts_title": "Gerando Shorts...",
         "progress_shorts_loading_model": "Carregando modelo Whisper",
         "progress_shorts_transcribing": "Transcrevendo video",
+        "progress_shorts_transcription_cached": "Usando transcricao em cache",
         "progress_shorts_matching_excerpt": "Localizando o trecho",
         "progress_shorts_building_subtitles": "Gerando legendas",
         "progress_shorts_rendering_video": "Renderizando video vertical",
@@ -172,6 +185,7 @@ TRANSLATIONS = {
         "progress_audio_title": "Processing audio cleanup...",
         "progress_audio_loading_model": "Loading Whisper model",
         "progress_audio_transcribing": "Transcribing audio",
+        "progress_audio_transcription_cached": "Using cached transcription",
         "progress_audio_detecting_silences": "Detecting silences",
         "progress_audio_detecting_duplicates": "Looking for duplicate takes",
         "progress_audio_rendering_audio": "Building cleaned audio",
@@ -194,12 +208,23 @@ TRANSLATIONS = {
         "short_excerpt_placeholder": "Paste the exact excerpt to find in the transcript.",
         "start_padding": "Start padding (s)",
         "end_padding": "End padding (s)",
+        "zoom_out": "Video zoom out",
+        "zoom_out_help": "Increase it to open space only at the top and bottom with a blurred background.",
+        "subtitle_color": "Subtitle color",
+        "subtitle_highlight_color": "Highlight color",
+        "subtitle_font_size": "Font size",
+        "subtitle_outline_size": "Outline thickness",
+        "subtitle_shadow_size": "Shadow",
+        "subtitle_margin_v": "Vertical position",
+        "subtitle_spacing": "Letter spacing",
+        "subtitle_style": "Subtitle style",
         "match_threshold": "Match threshold",
         "generate_shorts": "Generate Shorts",
         "short_generated": "Short generated successfully.",
         "progress_shorts_title": "Generating Shorts...",
         "progress_shorts_loading_model": "Loading Whisper model",
         "progress_shorts_transcribing": "Transcribing video",
+        "progress_shorts_transcription_cached": "Using cached transcription",
         "progress_shorts_matching_excerpt": "Locating the excerpt",
         "progress_shorts_building_subtitles": "Building subtitles",
         "progress_shorts_rendering_video": "Rendering vertical video",
@@ -231,6 +256,10 @@ def t(key: str) -> str:
 
 
 def _set_view(view: str) -> None:
+    current_view = st.session_state.get("view")
+    if current_view != view:
+        st.session_state.pop("audio_last_result", None)
+        st.session_state.pop("shorts_last_results", None)
     st.session_state.view = view
 
 
@@ -251,6 +280,51 @@ def _save_upload(uploaded_file, folder: Path) -> Path:
 def _download_button(path: Path, label: str, mime: str) -> None:
     if path.exists():
         st.download_button(label, data=path.read_bytes(), file_name=path.name, mime=mime, use_container_width=True)
+
+
+def _render_audio_result(result: dict[str, object]) -> None:
+    st.subheader(t("transcript_label"))
+    transcript_display = dict(result["transcript"])
+    transcript_display["segments"] = [asdict(segment) for segment in result["transcript"]["segments"]]
+    st.json(transcript_display, expanded=False)
+    st.subheader(t("downloads_label"))
+    _download_button(result["cleaned_wav"], t("download_cleaned_wav"), "audio/wav")
+    _download_button(result["cleaned_mp3"], t("download_cleaned_mp3"), "audio/mpeg")
+    _download_button(result["report_json"], t("download_report_json"), "application/json")
+    _download_button(result["report_csv"], t("download_report_csv"), "text/csv")
+    _download_button(result["davinci_wav"], t("download_davinci_wav"), "audio/wav")
+    _download_button(result["davinci_csv"], t("download_davinci_csv"), "text/csv")
+
+
+def _render_shorts_results(results: list[dict[str, object]]) -> None:
+    if not results:
+        return
+    st.subheader(t("downloads_label"))
+    for index, result in enumerate(results, start=1):
+        payload = result["payload"]
+        display_title = payload["title"] or f"{t('short_title')} {index}"
+        st.markdown(f"**{display_title}**")
+        st.write(
+            {
+                t("short_match_start_score"): payload["match_start_score"],
+                t("short_match_end_score"): payload["match_end_score"],
+                t("short_start"): payload["start"],
+                t("short_end"): payload["end"],
+                t("subtitle_color"): payload.get("subtitle_color", "#FFFFFF"),
+                t("subtitle_highlight_color"): payload.get("subtitle_highlight_color", "#3B82F6"),
+                t("subtitle_font_size"): payload.get("subtitle_font_size", 84),
+                t("subtitle_outline_size"): payload.get("subtitle_outline_size", 5),
+                t("subtitle_shadow_size"): payload.get("subtitle_shadow_size", 2),
+                t("subtitle_margin_v"): payload.get("subtitle_margin_v", 260),
+                t("subtitle_spacing"): payload.get("subtitle_spacing", 0.4),
+                t("zoom_out"): payload.get("zoom_out", 0.0),
+            }
+        )
+        _download_button(result["video"], f"{t('download_short_video')} {index}", "video/mp4")
+        _download_button(result["ass"], f"{t('download_short_ass')} {index}", "text/plain")
+        _download_button(result["srt"], f"{t('download_short_srt')} {index}", "text/plain")
+        _download_button(result["metadata"], f"{t('download_short_metadata')} {index}", "application/json")
+        _download_button(result["thumbnail"], f"{t('download_short_thumbnail')} {index}", "image/jpeg")
 
 
 def _make_progress_updater(progress_bar, status_placeholder, messages: dict[str, str]):
@@ -440,6 +514,7 @@ def _render_clean_audio() -> None:
     duplicate_threshold = st.slider(t("duplicate_similarity"), 50, 100, DEFAULT_DUPLICATE_THRESHOLD)
 
     if st.button(t("process_audio"), type="primary", disabled=uploaded_audio is None):
+        st.session_state.pop("audio_last_result", None)
         progress_bar = None
         progress_status = None
         try:
@@ -449,6 +524,7 @@ def _render_clean_audio() -> None:
             progress_messages = {
                 "loading_model": t("progress_audio_loading_model"),
                 "transcribing": t("progress_audio_transcribing"),
+                "transcription_cached": t("progress_audio_transcription_cached"),
                 "transcription_done": t("progress_audio_transcribing"),
                 "detecting_silences": t("progress_audio_detecting_silences"),
                 "detecting_duplicates": t("progress_audio_detecting_duplicates"),
@@ -473,24 +549,18 @@ def _render_clean_audio() -> None:
             )
             progress_bar.progress(100)
             progress_status.success(t("progress_audio_done"))
-            if result["transcript"].get("device") != st.session_state.get("device", "cuda"):
+            if not result["transcript"].get("cache_hit") and result["transcript"].get("device") != st.session_state.get("device", "cuda"):
                 st.warning(t("cuda_fallback_warning"))
+            st.session_state.audio_last_result = result
             st.success(t("processing_audio_success"))
-            transcript_display = dict(result["transcript"])
-            transcript_display["segments"] = [segment.__dict__ for segment in result["transcript"]["segments"]]
-            st.subheader(t("transcript_label"))
-            st.json(transcript_display, expanded=False)
-            st.subheader(t("downloads_label"))
-            _download_button(result["cleaned_wav"], t("download_cleaned_wav"), "audio/wav")
-            _download_button(result["cleaned_mp3"], t("download_cleaned_mp3"), "audio/mpeg")
-            _download_button(result["report_json"], t("download_report_json"), "application/json")
-            _download_button(result["report_csv"], t("download_report_csv"), "text/csv")
-            _download_button(result["davinci_wav"], t("download_davinci_wav"), "audio/wav")
-            _download_button(result["davinci_csv"], t("download_davinci_csv"), "text/csv")
         except Exception as exc:  # pragma: no cover - UI feedback
             if progress_status is not None:
                 progress_status.error(str(exc))
             st.error(str(exc))
+
+    audio_result = st.session_state.get("audio_last_result")
+    if audio_result:
+        _render_audio_result(audio_result)
 
 
 def _render_shorts() -> None:
@@ -533,8 +603,21 @@ def _render_shorts() -> None:
         match_threshold = st.slider(t("match_threshold"), 50, 100, DEFAULT_MATCH_THRESHOLD)
     with col2:
         end_padding_seconds = st.slider(t("end_padding"), 0.0, 2.0, DEFAULT_END_PADDING_SECONDS, step=0.05)
+    zoom_out = st.slider(t("zoom_out"), 0.0, 0.4, 0.0, step=0.05, help=t("zoom_out_help"))
+    with st.expander(t("subtitle_style"), expanded=False):
+        subtitle_color = st.color_picker(t("subtitle_color"), "#FFFFFF")
+        subtitle_highlight_color = st.color_picker(t("subtitle_highlight_color"), "#3B82F6")
+        style_col1, style_col2 = st.columns(2)
+        with style_col1:
+            subtitle_font_size = st.slider(t("subtitle_font_size"), 56, 110, 84, step=1)
+            subtitle_outline_size = st.slider(t("subtitle_outline_size"), 0, 10, 5, step=1)
+            subtitle_shadow_size = st.slider(t("subtitle_shadow_size"), 0, 8, 2, step=1)
+        with style_col2:
+            subtitle_margin_v = st.slider(t("subtitle_margin_v"), 80, 360, 260, step=5)
+            subtitle_spacing = st.slider(t("subtitle_spacing"), 0.0, 3.0, 0.4, step=0.1)
 
     if st.button(t("generate_shorts"), type="primary", disabled=uploaded_video is None):
+        st.session_state.shorts_last_results = []
         progress_bar = None
         progress_status = None
         try:
@@ -544,6 +627,7 @@ def _render_shorts() -> None:
             progress_messages = {
                 "loading_model": t("progress_shorts_loading_model"),
                 "transcribing": t("progress_shorts_transcribing"),
+                "transcription_cached": t("progress_shorts_transcription_cached"),
                 "transcription_done": t("progress_shorts_transcribing"),
                 "matching_excerpt": t("progress_shorts_matching_excerpt"),
                 "building_subtitles": t("progress_shorts_building_subtitles"),
@@ -553,6 +637,7 @@ def _render_shorts() -> None:
             }
             progress_callback = _make_progress_updater(progress_bar, progress_status, progress_messages)
             input_path = _save_upload(uploaded_video, UPLOADS_DIR)
+            generated_results = []
             for index, short in enumerate(shorts, start=1):
                 if not short["title"] and not short["target_text"]:
                     continue
@@ -571,30 +656,31 @@ def _render_shorts() -> None:
                     end_padding_seconds=end_padding_seconds,
                     start_threshold=match_threshold,
                     end_threshold=match_threshold,
+                    subtitle_color=subtitle_color,
+                    subtitle_highlight_color=subtitle_highlight_color,
+                    subtitle_font_size=subtitle_font_size,
+                    subtitle_outline_size=subtitle_outline_size,
+                    subtitle_shadow_size=subtitle_shadow_size,
+                    subtitle_margin_v=subtitle_margin_v,
+                    subtitle_spacing=subtitle_spacing,
+                    zoom_out=zoom_out,
                     progress_callback=progress_callback,
                 )
-                progress_bar.progress(100)
-                progress_status.success(t("progress_shorts_done"))
-                if result["payload"].get("device") != st.session_state.get("device", "cuda"):
+                if not result["payload"].get("cache_hit") and result["payload"].get("device") != st.session_state.get("device", "cuda"):
                     st.warning(t("cuda_fallback_warning"))
                 st.success(f"{t('short_title')} {index}: {t('short_generated')}")
-                st.write(
-                    {
-                        t("short_match_start_score"): result["payload"]["match_start_score"],
-                        t("short_match_end_score"): result["payload"]["match_end_score"],
-                        t("short_start"): result["payload"]["start"],
-                        t("short_end"): result["payload"]["end"],
-                    }
-                )
-                _download_button(result["video"], t("download_short_video"), "video/mp4")
-                _download_button(result["ass"], t("download_short_ass"), "text/plain")
-                _download_button(result["srt"], t("download_short_srt"), "text/plain")
-                _download_button(result["metadata"], t("download_short_metadata"), "application/json")
-                _download_button(result["thumbnail"], t("download_short_thumbnail"), "image/jpeg")
+                generated_results.append(result)
+            st.session_state.shorts_last_results = generated_results
+            progress_bar.progress(100)
+            progress_status.success(t("progress_shorts_done"))
         except Exception as exc:  # pragma: no cover - UI feedback
             if progress_status is not None:
                 progress_status.error(str(exc))
             st.error(str(exc))
+
+    shorts_results = st.session_state.get("shorts_last_results", [])
+    if shorts_results:
+        _render_shorts_results(shorts_results)
 
 
 _inject_styles()

@@ -48,5 +48,6 @@ To use CUDA inside Docker, the host must have a compatible NVIDIA driver and the
 
 - Outputs are written under `data/outputs`.
 - Temporary uploads and transcriptions are stored under `data/`.
+- Transcriptions are cached by file hash in `data/transcriptions`, so repeated runs on the same media reuse the previous transcription.
 - The first version focuses on a working end-to-end flow, not perfect matching.
 - Streamlit upload size is configured in `.streamlit/config.toml`.

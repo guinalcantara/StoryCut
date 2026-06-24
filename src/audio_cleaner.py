@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-import json
 import os
 import re
 from pathlib import Path
@@ -10,7 +9,6 @@ from typing import Any, Callable
 from .config import (
     DAVINCI_DIR,
     OUTPUTS_DIR,
-    TRANSCRIPTIONS_DIR,
     DEFAULT_DUPLICATE_THRESHOLD,
     DEFAULT_MIN_SILENCE_DURATION_MS,
     DEFAULT_POST_SPEECH_PADDING_MS,
@@ -21,7 +19,7 @@ from .config import (
 from .duplicate_detector import find_duplicate_matches
 from .subtitle_generator import build_events, write_ass, write_srt
 from .text_matcher import transcript_text
-from .transcriber import TranscriptSegment, save_transcript, transcribe_media
+from .transcriber import TranscriptSegment, transcribe_media
 from .utils import (
     complement_intervals,
     ensure_parent,
@@ -161,7 +159,13 @@ def transcribe_and_analyze(
     device: str = "cpu",
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
-    transcript = transcribe_media(media_path, model_name=model_name, language=language, device=device)
+    transcript = transcribe_media(
+        media_path,
+        model_name=model_name,
+        language=language,
+        device=device,
+        progress_callback=progress_callback,
+    )
     return transcript
 
 
@@ -186,6 +190,7 @@ def clean_audio_pipeline(
         model_name=model_name,
         language=language,
         device=device,
+        progress_callback=progress_callback,
     )
     segments: list[TranscriptSegment] = transcript["segments"]
     duration = transcript.get("duration") or probe_duration(media_path)
@@ -223,8 +228,7 @@ def clean_audio_pipeline(
     run_command([ffmpeg, "-y", "-i", str(cleaned_wav), str(cleaned_mp3)])
 
     _emit_progress(progress_callback, "saving_reports", 6, 6)
-    transcript_path = TRANSCRIPTIONS_DIR / f"{media_path.stem}_transcript.json"
-    save_transcript(transcript_path, transcript)
+    transcript_path = Path(transcript["cache_path"])
 
     script_similarity = 0
     if script_text.strip():
