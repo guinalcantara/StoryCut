@@ -74,6 +74,16 @@ TRANSLATIONS = {
         "duplicate_similarity": "Similaridade para duplicacao",
         "process_audio": "Processar audio",
         "processing_audio_success": "Audio processado com sucesso.",
+        "progress_audio_title": "Processando limpeza de audio...",
+        "progress_audio_loading_model": "Carregando modelo Whisper",
+        "progress_audio_transcribing": "Transcrevendo audio",
+        "progress_audio_detecting_silences": "Detectando silencias",
+        "progress_audio_detecting_duplicates": "Procurando trechos duplicados",
+        "progress_audio_rendering_audio": "Montando audio limpo",
+        "progress_audio_exporting_mp3": "Exportando MP3",
+        "progress_audio_saving_reports": "Salvando relatorios",
+        "progress_audio_done": "Limpeza concluida",
+        "cuda_fallback_warning": "CUDA falhou neste ambiente; o processamento continuou em CPU.",
         "transcript_label": "Transcricao",
         "downloads_label": "Downloads",
         "download_cleaned_wav": "Baixar WAV limpo",
@@ -92,6 +102,15 @@ TRANSLATIONS = {
         "match_threshold": "Limite de correspondencia",
         "generate_shorts": "Gerar Shorts",
         "short_generated": "Short gerado com sucesso.",
+        "progress_shorts_title": "Gerando Shorts...",
+        "progress_shorts_loading_model": "Carregando modelo Whisper",
+        "progress_shorts_transcribing": "Transcrevendo video",
+        "progress_shorts_matching_excerpt": "Localizando o trecho",
+        "progress_shorts_building_subtitles": "Gerando legendas",
+        "progress_shorts_rendering_video": "Renderizando video vertical",
+        "progress_shorts_building_thumbnail": "Gerando miniatura",
+        "progress_shorts_saving_metadata": "Salvando metadados",
+        "progress_shorts_done": "Short concluido",
         "short_skipped_empty": "foi ignorado porque o trecho esta vazio.",
         "short_match_start_score": "Pontuacao de inicio",
         "short_match_end_score": "Pontuacao de fim",
@@ -150,6 +169,16 @@ TRANSLATIONS = {
         "duplicate_similarity": "Duplicate similarity",
         "process_audio": "Process audio",
         "processing_audio_success": "Audio processed successfully.",
+        "progress_audio_title": "Processing audio cleanup...",
+        "progress_audio_loading_model": "Loading Whisper model",
+        "progress_audio_transcribing": "Transcribing audio",
+        "progress_audio_detecting_silences": "Detecting silences",
+        "progress_audio_detecting_duplicates": "Looking for duplicate takes",
+        "progress_audio_rendering_audio": "Building cleaned audio",
+        "progress_audio_exporting_mp3": "Exporting MP3",
+        "progress_audio_saving_reports": "Saving reports",
+        "progress_audio_done": "Cleanup finished",
+        "cuda_fallback_warning": "CUDA failed in this environment; processing continued on CPU.",
         "transcript_label": "Transcript",
         "downloads_label": "Downloads",
         "download_cleaned_wav": "Download cleaned WAV",
@@ -168,6 +197,15 @@ TRANSLATIONS = {
         "match_threshold": "Match threshold",
         "generate_shorts": "Generate Shorts",
         "short_generated": "Short generated successfully.",
+        "progress_shorts_title": "Generating Shorts...",
+        "progress_shorts_loading_model": "Loading Whisper model",
+        "progress_shorts_transcribing": "Transcribing video",
+        "progress_shorts_matching_excerpt": "Locating the excerpt",
+        "progress_shorts_building_subtitles": "Building subtitles",
+        "progress_shorts_rendering_video": "Rendering vertical video",
+        "progress_shorts_building_thumbnail": "Building thumbnail",
+        "progress_shorts_saving_metadata": "Saving metadata",
+        "progress_shorts_done": "Short finished",
         "short_skipped_empty": "was skipped because the excerpt is empty.",
         "short_match_start_score": "Start score",
         "short_match_end_score": "End score",
@@ -213,6 +251,15 @@ def _save_upload(uploaded_file, folder: Path) -> Path:
 def _download_button(path: Path, label: str, mime: str) -> None:
     if path.exists():
         st.download_button(label, data=path.read_bytes(), file_name=path.name, mime=mime, use_container_width=True)
+
+
+def _make_progress_updater(progress_bar, status_placeholder, messages: dict[str, str]):
+    def _update(stage: str, step: int, total: int) -> None:
+        percent = 0 if total <= 0 else int(round((step / total) * 100))
+        progress_bar.progress(min(100, max(0, percent)))
+        status_placeholder.info(messages.get(stage, stage.replace("_", " ").title()))
+
+    return _update
 
 
 def _inject_styles() -> None:
@@ -304,7 +351,7 @@ def _render_sidebar() -> None:
     st.sidebar.markdown("---")
     with st.sidebar.expander(t("advanced_settings"), expanded=False):
         st.selectbox(t("model_label"), ["small", "medium", "large-v3"], index=1, key="model_name")
-        st.selectbox(t("device_label"), ["cpu", "cuda"], index=0, key="device")
+        st.selectbox(t("device_label"), ["cpu", "cuda"], index=1, key="device")
 
 
 def _render_home() -> None:
@@ -393,20 +440,41 @@ def _render_clean_audio() -> None:
     duplicate_threshold = st.slider(t("duplicate_similarity"), 50, 100, DEFAULT_DUPLICATE_THRESHOLD)
 
     if st.button(t("process_audio"), type="primary", disabled=uploaded_audio is None):
+        progress_bar = None
+        progress_status = None
         try:
+            progress_bar = st.progress(0)
+            progress_status = st.empty()
+            progress_status.info(t("progress_audio_title"))
+            progress_messages = {
+                "loading_model": t("progress_audio_loading_model"),
+                "transcribing": t("progress_audio_transcribing"),
+                "transcription_done": t("progress_audio_transcribing"),
+                "detecting_silences": t("progress_audio_detecting_silences"),
+                "detecting_duplicates": t("progress_audio_detecting_duplicates"),
+                "rendering_audio": t("progress_audio_rendering_audio"),
+                "exporting_mp3": t("progress_audio_exporting_mp3"),
+                "saving_reports": t("progress_audio_saving_reports"),
+            }
+            progress_callback = _make_progress_updater(progress_bar, progress_status, progress_messages)
             input_path = _save_upload(uploaded_audio, UPLOADS_DIR)
             result = clean_audio_pipeline(
                 input_path,
                 script_text=script_text,
                 output_root=OUTPUTS_DIR,
                 model_name=st.session_state.get("model_name", DEFAULT_WHISPER_MODEL),
-                device=st.session_state.get("device", "cpu"),
+                device=st.session_state.get("device", "cuda"),
                 silence_threshold_db=silence_threshold_db,
                 min_silence_duration_ms=min_silence_duration_ms,
                 pre_speech_padding_ms=pre_padding_ms,
                 post_speech_padding_ms=post_padding_ms,
                 duplicate_threshold=duplicate_threshold,
+                progress_callback=progress_callback,
             )
+            progress_bar.progress(100)
+            progress_status.success(t("progress_audio_done"))
+            if result["transcript"].get("device") != st.session_state.get("device", "cuda"):
+                st.warning(t("cuda_fallback_warning"))
             st.success(t("processing_audio_success"))
             transcript_display = dict(result["transcript"])
             transcript_display["segments"] = [segment.__dict__ for segment in result["transcript"]["segments"]]
@@ -420,6 +488,8 @@ def _render_clean_audio() -> None:
             _download_button(result["davinci_wav"], t("download_davinci_wav"), "audio/wav")
             _download_button(result["davinci_csv"], t("download_davinci_csv"), "text/csv")
         except Exception as exc:  # pragma: no cover - UI feedback
+            if progress_status is not None:
+                progress_status.error(str(exc))
             st.error(str(exc))
 
 
@@ -465,7 +535,23 @@ def _render_shorts() -> None:
         end_padding_seconds = st.slider(t("end_padding"), 0.0, 2.0, DEFAULT_END_PADDING_SECONDS, step=0.05)
 
     if st.button(t("generate_shorts"), type="primary", disabled=uploaded_video is None):
+        progress_bar = None
+        progress_status = None
         try:
+            progress_bar = st.progress(0)
+            progress_status = st.empty()
+            progress_status.info(t("progress_shorts_title"))
+            progress_messages = {
+                "loading_model": t("progress_shorts_loading_model"),
+                "transcribing": t("progress_shorts_transcribing"),
+                "transcription_done": t("progress_shorts_transcribing"),
+                "matching_excerpt": t("progress_shorts_matching_excerpt"),
+                "building_subtitles": t("progress_shorts_building_subtitles"),
+                "rendering_video": t("progress_shorts_rendering_video"),
+                "building_thumbnail": t("progress_shorts_building_thumbnail"),
+                "saving_metadata": t("progress_shorts_saving_metadata"),
+            }
+            progress_callback = _make_progress_updater(progress_bar, progress_status, progress_messages)
             input_path = _save_upload(uploaded_video, UPLOADS_DIR)
             for index, short in enumerate(shorts, start=1):
                 if not short["title"] and not short["target_text"]:
@@ -480,12 +566,17 @@ def _render_shorts() -> None:
                     description=short["description"],
                     output_dir=SHORTS_DIR,
                     model_name=st.session_state.get("model_name", DEFAULT_WHISPER_MODEL),
-                    device=st.session_state.get("device", "cpu"),
+                    device=st.session_state.get("device", "cuda"),
                     start_padding_seconds=start_padding_seconds,
                     end_padding_seconds=end_padding_seconds,
                     start_threshold=match_threshold,
                     end_threshold=match_threshold,
+                    progress_callback=progress_callback,
                 )
+                progress_bar.progress(100)
+                progress_status.success(t("progress_shorts_done"))
+                if result["payload"].get("device") != st.session_state.get("device", "cuda"):
+                    st.warning(t("cuda_fallback_warning"))
                 st.success(f"{t('short_title')} {index}: {t('short_generated')}")
                 st.write(
                     {
@@ -501,6 +592,8 @@ def _render_shorts() -> None:
                 _download_button(result["metadata"], t("download_short_metadata"), "application/json")
                 _download_button(result["thumbnail"], t("download_short_thumbnail"), "image/jpeg")
         except Exception as exc:  # pragma: no cover - UI feedback
+            if progress_status is not None:
+                progress_status.error(str(exc))
             st.error(str(exc))
 
 
@@ -513,7 +606,7 @@ if "view" not in st.session_state:
 if "model_name" not in st.session_state:
     st.session_state.model_name = DEFAULT_WHISPER_MODEL
 if "device" not in st.session_state:
-    st.session_state.device = "cpu"
+    st.session_state.device = "cuda"
 
 _render_sidebar()
 

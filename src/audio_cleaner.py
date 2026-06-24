@@ -5,7 +5,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .config import (
     DAVINCI_DIR,
@@ -39,6 +39,14 @@ from .utils import (
 class SilenceRange:
     start: float
     end: float
+
+
+ProgressCallback = Callable[[str, int, int], None]
+
+
+def _emit_progress(progress_callback: ProgressCallback | None, stage: str, step: int, total: int) -> None:
+    if progress_callback is not None:
+        progress_callback(stage, step, total)
 
 
 def probe_duration(media_path: Path) -> float:
@@ -151,6 +159,7 @@ def transcribe_and_analyze(
     model_name: str = DEFAULT_WHISPER_MODEL,
     language: str | None = None,
     device: str = "cpu",
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     transcript = transcribe_media(media_path, model_name=model_name, language=language, device=device)
     return transcript
@@ -168,12 +177,20 @@ def clean_audio_pipeline(
     pre_speech_padding_ms: int = DEFAULT_PRE_SPEECH_PADDING_MS,
     post_speech_padding_ms: int = DEFAULT_POST_SPEECH_PADDING_MS,
     duplicate_threshold: int = DEFAULT_DUPLICATE_THRESHOLD,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     output_root.mkdir(parents=True, exist_ok=True)
-    transcript = transcribe_and_analyze(media_path, model_name=model_name, language=language, device=device)
+    _emit_progress(progress_callback, "transcribing", 1, 6)
+    transcript = transcribe_and_analyze(
+        media_path,
+        model_name=model_name,
+        language=language,
+        device=device,
+    )
     segments: list[TranscriptSegment] = transcript["segments"]
     duration = transcript.get("duration") or probe_duration(media_path)
 
+    _emit_progress(progress_callback, "detecting_silences", 2, 6)
     silence_ranges = detect_silences(
         media_path,
         silence_threshold_db=silence_threshold_db,
@@ -188,20 +205,24 @@ def clean_audio_pipeline(
         duration=duration,
     )
 
+    _emit_progress(progress_callback, "detecting_duplicates", 3, 6)
     duplicate_matches = find_duplicate_matches(segments, threshold=duplicate_threshold)
     duplicate_ranges = [(match.removed_start, match.removed_end) for match in duplicate_matches]
     removal_ranges = merge_intervals([*silence_tuples, *duplicate_ranges])
     kept_ranges = subtract_intervals(speech_ranges, duplicate_ranges)
 
+    _emit_progress(progress_callback, "rendering_audio", 4, 6)
     cleaned_wav = output_root / "audio_limpo.wav"
     _concat_audio_segments(media_path, kept_ranges, cleaned_wav)
 
+    _emit_progress(progress_callback, "exporting_mp3", 5, 6)
     cleaned_mp3 = output_root / "audio_limpo.mp3"
     ffmpeg = find_executable("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg was not found on PATH.")
     run_command([ffmpeg, "-y", "-i", str(cleaned_wav), str(cleaned_mp3)])
 
+    _emit_progress(progress_callback, "saving_reports", 6, 6)
     transcript_path = TRANSCRIPTIONS_DIR / f"{media_path.stem}_transcript.json"
     save_transcript(transcript_path, transcript)
 

@@ -42,6 +42,8 @@ streamlit run app.py
 docker compose up --build
 ```
 
+To use CUDA inside Docker, the host must have a compatible NVIDIA driver and the NVIDIA Container Toolkit configured so Docker can access the GPU.
+
 ## Notes
 
 - Outputs are written under `data/outputs`.

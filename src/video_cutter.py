@@ -3,13 +3,21 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .config import OUTPUTS_DIR, SHORTS_DIR, DEFAULT_END_PADDING_SECONDS, DEFAULT_MATCH_THRESHOLD, DEFAULT_START_PADDING_SECONDS
 from .subtitle_generator import build_events, write_ass, write_srt
 from .text_matcher import ClipMatch, find_clip_match
 from .transcriber import TranscriptSegment, save_transcript, transcribe_media
 from .utils import ensure_parent, ffmpeg_filter_escape_path, find_executable, run_command, unique_path, write_json
+
+
+ProgressCallback = Callable[[str, int, int], None]
+
+
+def _emit_progress(progress_callback: ProgressCallback | None, stage: str, step: int, total: int) -> None:
+    if progress_callback is not None:
+        progress_callback(stage, step, total)
 
 
 def _render_thumbnail(media_path: Path, output_path: Path, timestamp: float) -> Path:
@@ -93,10 +101,14 @@ def generate_short_from_text(
     end_padding_seconds: float = DEFAULT_END_PADDING_SECONDS,
     start_threshold: int = DEFAULT_MATCH_THRESHOLD,
     end_threshold: int = DEFAULT_MATCH_THRESHOLD,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    _emit_progress(progress_callback, "transcribing", 1, 6)
     transcript = transcribe_media(media_path, model_name=model_name, language=language, device=device)
     segments: list[TranscriptSegment] = transcript["segments"]
+
+    _emit_progress(progress_callback, "matching_excerpt", 2, 6)
     match: ClipMatch = find_clip_match(
         segments,
         target_text,
@@ -115,11 +127,17 @@ def generate_short_from_text(
     short_thumb = output_dir / f"{short_stem}_thumbnail_frame.jpg"
     transcript_path = output_dir / f"{short_stem}_transcript.json"
 
+    _emit_progress(progress_callback, "building_subtitles", 3, 6)
     events = build_events(segments, clip_start, clip_end, max_words=6)
     write_ass(short_ass, events)
     write_srt(short_srt, events)
+
+    _emit_progress(progress_callback, "rendering_video", 4, 6)
     _render_short_video(media_path, short_mp4, clip_start, clip_end, subtitle_path=short_ass)
+
+    _emit_progress(progress_callback, "building_thumbnail", 5, 6)
     _render_thumbnail(media_path, short_thumb, (clip_start + clip_end) / 2)
+    _emit_progress(progress_callback, "saving_metadata", 6, 6)
     save_transcript(transcript_path, transcript)
 
     payload = {
@@ -128,6 +146,8 @@ def generate_short_from_text(
         "source_video": str(media_path),
         "start": clip_start,
         "end": clip_end,
+        "device": transcript.get("device"),
+        "requested_device": transcript.get("requested_device", device),
         "match_start_score": match.start_score,
         "match_end_score": match.end_score,
         "start_phrase": match.start_phrase,
