@@ -40,6 +40,7 @@ from src.transcript_exporter import (
     format_timestamped_transcript,
     transcript_rows,
     write_timestamped_csv,
+    write_timestamped_srt,
     write_timestamped_txt,
     write_transcript_json,
 )
@@ -138,6 +139,7 @@ TRANSLATIONS = {
         "transcript_segments": "Segmentos",
         "downloads_label": "Downloads",
         "download_transcript_txt": "Baixar TXT com timestamps",
+        "download_transcript_srt": "Baixar legenda SRT",
         "download_transcript_csv": "Baixar CSV",
         "download_transcript_json": "Baixar JSON",
         "download_cleaned_wav": "Baixar WAV limpo",
@@ -291,6 +293,7 @@ TRANSLATIONS = {
         "transcript_segments": "Segments",
         "downloads_label": "Downloads",
         "download_transcript_txt": "Download timestamped TXT",
+        "download_transcript_srt": "Download SRT subtitles",
         "download_transcript_csv": "Download CSV",
         "download_transcript_json": "Download JSON",
         "download_cleaned_wav": "Download cleaned WAV",
@@ -422,6 +425,7 @@ def _render_transcription_result(result: dict[str, object]) -> None:
     st.dataframe(result["rows"], use_container_width=True, hide_index=True)
     st.subheader(t("downloads_label"))
     _download_button(result["txt"], t("download_transcript_txt"), "text/plain")
+    _download_button(result["srt"], t("download_transcript_srt"), "text/plain")
     _download_button(result["csv"], t("download_transcript_csv"), "text/csv")
     _download_button(result["json"], t("download_transcript_json"), "application/json")
 
@@ -896,9 +900,11 @@ def _render_transcription() -> None:
             export_stem = unique_path(TRANSCRIPTS_DIR, input_path.stem, ".txt").stem
             txt_path = TRANSCRIPTS_DIR / f"{export_stem}.txt"
             csv_path = TRANSCRIPTS_DIR / f"{export_stem}.csv"
+            srt_path = TRANSCRIPTS_DIR / f"{export_stem}.srt"
             json_path = TRANSCRIPTS_DIR / f"{export_stem}.json"
             formatted_text = format_timestamped_transcript(segments)
             write_timestamped_txt(txt_path, segments)
+            write_timestamped_srt(srt_path, segments)
             write_timestamped_csv(csv_path, segments)
             write_transcript_json(json_path, transcript)
             result = {
@@ -906,6 +912,7 @@ def _render_transcription() -> None:
                 "rows": transcript_rows(segments),
                 "formatted_text": formatted_text,
                 "txt": txt_path,
+                "srt": srt_path,
                 "csv": csv_path,
                 "json": json_path,
             }

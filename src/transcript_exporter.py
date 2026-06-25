@@ -51,6 +51,18 @@ def write_timestamped_csv(path: Path, segments: Iterable[TranscriptSegment]) -> 
     )
 
 
+def write_timestamped_srt(path: Path, segments: Iterable[TranscriptSegment]) -> Path:
+    ensure_parent(path)
+    lines: list[str] = []
+    for index, row in enumerate(transcript_rows(segments), start=1):
+        lines.append(str(index))
+        lines.append(f"{row['start']} --> {row['end']}")
+        lines.append(str(row["text"]))
+        lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
 def write_transcript_json(path: Path, transcript: dict[str, object]) -> Path:
     payload = dict(transcript)
     payload["segments"] = [asdict(segment) for segment in transcript.get("segments", [])]
