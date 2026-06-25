@@ -12,10 +12,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /usr/local/share/fonts/anton \
+RUN mkdir -p /usr/local/share/fonts/storycut \
     && curl -L --fail --silent --show-error \
-    -o /usr/local/share/fonts/anton/Anton-Regular.ttf \
-    https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf \
+    -o /usr/local/share/fonts/storycut/Montserrat.ttf \
+    https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf \
+    && curl -L --fail --silent --show-error \
+    -o /usr/local/share/fonts/storycut/PlayfairDisplay.ttf \
+    https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf \
+    && curl -L --fail --silent --show-error \
+    -o /usr/local/share/fonts/storycut/PlayfairDisplay-Italic.ttf \
+    https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay-Italic%5Bwght%5D.ttf \
+    && curl -L --fail --silent --show-error \
+    -o /usr/local/share/fonts/storycut/BebasNeue-Regular.ttf \
+    https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf \
     && fc-cache -f
 
 WORKDIR /app

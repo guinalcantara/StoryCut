@@ -3,7 +3,9 @@
 StoryCut is a local Streamlit app for two editing workflows:
 
 1. Clean narrated audio for DaVinci Resolve.
-2. Generate vertical Shorts from a long video and a text excerpt.
+2. Transcribe video or audio with timestamps.
+3. Generate vertical Shorts from a long video and a text excerpt.
+4. Burn subtitles into a video, optionally using an uploaded subtitle file.
 
 ## What it does
 
@@ -11,7 +13,9 @@ StoryCut is a local Streamlit app for two editing workflows:
 - Detects silences with FFmpeg.
 - Detects simple repeated takes with fuzzy matching.
 - Cuts audio and exports reports.
+- Exports timestamped transcripts as TXT, CSV, and JSON.
 - Finds text passages in a transcript and renders vertical Shorts with subtitles.
+- Burns subtitles into full videos with the current subtitle style or an uploaded .ASS/.SRT file.
 - Starts with a presentation home screen.
 - Supports Portuguese and English UI labels, with Portuguese as the default.
 - Accepts uploads up to 1 GB through Streamlit's upload limit.

@@ -4,6 +4,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from .config import (
+    DEFAULT_SHORTS_SUBTITLE_FONT_SIZE,
+    DEFAULT_SHORTS_SUBTITLE_ACCENT_FONT,
+    DEFAULT_SHORTS_SUBTITLE_BASE_FONT,
+    DEFAULT_SHORTS_SUBTITLE_ACCENT_LAST_WORD,
+    DEFAULT_SHORTS_SUBTITLE_COLOR,
+    DEFAULT_SHORTS_SUBTITLE_HIGHLIGHT_COLOR,
+    DEFAULT_SHORTS_SUBTITLE_MARGIN_V,
+    DEFAULT_SHORTS_SUBTITLE_OUTLINE_SIZE,
+    DEFAULT_SHORTS_SUBTITLE_SHADOW_SIZE,
+    DEFAULT_SHORTS_SUBTITLE_SPACING,
+)
 from .transcriber import TranscriptSegment, TranscriptWord
 from .utils import ass_timestamp, ensure_parent, normalize_whitespace, seconds_to_timestamp
 
@@ -136,12 +148,74 @@ def _hex_to_ass_color(hex_color: str) -> str:
     return f"&H00{blue}{green}{red}&"
 
 
-def _karaoke_text(event: SubtitleEvent) -> str:
+def _word_font_tags(is_last_word: bool, base_font: str, accent_font: str, base_size: int, accent_size: int) -> str:
+    if is_last_word:
+        return rf"{{\fn{accent_font}\fs{accent_size}\b0\i1}}"
+    return rf"{{\fn{base_font}\fs{base_size}\b0\i0}}"
+
+
+_SHORT_FUNCTION_WORDS = {
+    "a",
+    "as",
+    "e",
+    "o",
+    "os",
+    "um",
+    "uma",
+    "uns",
+    "umas",
+    "de",
+    "do",
+    "da",
+    "dos",
+    "das",
+    "em",
+    "no",
+    "na",
+    "nos",
+    "nas",
+    "por",
+    "pra",
+    "pro",
+    "com",
+    "sem",
+    "se",
+    "me",
+    "te",
+    "lhe",
+    "que",
+    "ou",
+    "ja",
+    "eh",
+    "é",
+}
+
+
+def _is_meaningful_accent_word(word: str) -> bool:
+    normalized = normalize_whitespace(word).strip().strip(".,;:!?\"'()[]{}")
+    if len(normalized) < 3:
+        return False
+    lowered = normalized.casefold()
+    if lowered in _SHORT_FUNCTION_WORDS:
+        return False
+    return any(char.isalpha() for char in normalized)
+
+
+def _styled_karaoke_text(
+    event: SubtitleEvent,
+    base_font: str,
+    accent_font: str,
+    base_size: int,
+    accent_size: int,
+    accent_last_word: bool,
+) -> str:
     if not event.words:
         return _ass_text(event.text)
 
     parts: list[str] = []
     for index, word in enumerate(event.words):
+        is_last_word = index == len(event.words) - 1
+        use_accent_font = accent_last_word and is_last_word and _is_meaningful_accent_word(word.word)
         word_start = float(word.start)
         word_end = float(word.end)
         if index + 1 < len(event.words):
@@ -150,7 +224,8 @@ def _karaoke_text(event: SubtitleEvent) -> str:
         else:
             duration_seconds = max(event.end - word_start, word_end - word_start, 0.01)
         duration_cs = max(1, int(round(duration_seconds * 100)))
-        parts.append(r"{\k%d}%s" % (duration_cs, _ass_text(word.word)))
+        font_tag = _word_font_tags(use_accent_font, base_font, accent_font, base_size, accent_size)
+        parts.append(r"{\k%d}%s%s" % (duration_cs, font_tag, _ass_text(word.word)))
         if index + 1 < len(event.words):
             parts.append(" ")
     return "".join(parts)
@@ -159,17 +234,22 @@ def _karaoke_text(event: SubtitleEvent) -> str:
 def write_ass(
     path: Path,
     events: list[SubtitleEvent],
-    subtitle_color: str = "#FFFFFF",
-    highlight_color: str = "#3B82F6",
-    font_size: int = 84,
-    outline_size: int = 5,
-    shadow_size: int = 2,
-    margin_v: int = 260,
-    spacing: float = 0.4,
+    subtitle_color: str = DEFAULT_SHORTS_SUBTITLE_COLOR,
+    highlight_color: str = DEFAULT_SHORTS_SUBTITLE_HIGHLIGHT_COLOR,
+    font_size: int = DEFAULT_SHORTS_SUBTITLE_FONT_SIZE,
+    outline_size: int = DEFAULT_SHORTS_SUBTITLE_OUTLINE_SIZE,
+    shadow_size: int = DEFAULT_SHORTS_SUBTITLE_SHADOW_SIZE,
+    margin_v: int = DEFAULT_SHORTS_SUBTITLE_MARGIN_V,
+    spacing: float = DEFAULT_SHORTS_SUBTITLE_SPACING,
+    base_font: str = DEFAULT_SHORTS_SUBTITLE_BASE_FONT,
+    accent_font: str = DEFAULT_SHORTS_SUBTITLE_ACCENT_FONT,
+    accent_font_size: int | None = None,
+    accent_last_word: bool = DEFAULT_SHORTS_SUBTITLE_ACCENT_LAST_WORD,
 ) -> Path:
     ensure_parent(path)
     ass_color = _hex_to_ass_color(subtitle_color)
     ass_highlight = _hex_to_ass_color(highlight_color)
+    accent_font_size = accent_font_size or int(round(font_size * 1.08))
     header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -177,11 +257,12 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Anton,{font_size},{color},{highlight},&H00000000,&H64000000,1,0,0,0,100,100,{spacing},0,1,{outline},{shadow},2,60,60,{margin_v},1
+Style: Default,{base_font},{font_size},{color},{highlight},&H00000000,&H64000000,0,0,0,0,100,100,{spacing},0,1,{outline},{shadow},2,60,60,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """.format(
+        base_font=base_font,
         font_size=font_size,
         color=ass_color,
         highlight=ass_highlight,
@@ -196,7 +277,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "Dialogue: 0,{start},{end},Default,,0,0,0,,{text}".format(
                 start=ass_timestamp(event.start),
                 end=ass_timestamp(event.end),
-                text=_karaoke_text(event),
+                text=_styled_karaoke_text(
+                    event,
+                    base_font=base_font,
+                    accent_font=accent_font,
+                    base_size=font_size,
+                    accent_size=accent_font_size,
+                    accent_last_word=accent_last_word,
+                ),
             )
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

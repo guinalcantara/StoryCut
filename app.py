@@ -13,17 +13,38 @@ from src.config import (
     DEFAULT_MIN_SILENCE_DURATION_MS,
     DEFAULT_POST_SPEECH_PADDING_MS,
     DEFAULT_PRE_SPEECH_PADDING_MS,
+    DEFAULT_SHORTS_SUBTITLE_FONT_SIZE,
+    DEFAULT_SHORTS_SUBTITLE_ACCENT_LAST_WORD,
+    DEFAULT_SHORTS_SUBTITLE_COLOR,
+    DEFAULT_SHORTS_SUBTITLE_HIGHLIGHT_COLOR,
+    DEFAULT_SHORTS_SUBTITLE_OUTLINE_SIZE,
+    DEFAULT_SHORTS_SUBTITLE_BASE_FONT,
+    DEFAULT_SHORTS_SUBTITLE_ACCENT_FONT,
+    DEFAULT_SHORTS_SUBTITLE_MARGIN_V,
+    DEFAULT_SHORTS_SUBTITLE_SHADOW_SIZE,
+    DEFAULT_SHORTS_SUBTITLE_SPACING,
     DEFAULT_SILENCE_THRESHOLD_DB,
     DEFAULT_START_PADDING_SECONDS,
     DEFAULT_WHISPER_MODEL,
     OUTPUTS_DIR,
     PROJECT_NAME,
     SHORTS_DIR,
+    SHORTS_SUBTITLE_FONT_OPTIONS,
     UPLOADS_DIR,
+    TRANSCRIPTS_DIR,
+    SUBTITLED_VIDEOS_DIR,
     ensure_directories,
 )
+from src.transcriber import transcribe_media
+from src.transcript_exporter import (
+    format_timestamped_transcript,
+    transcript_rows,
+    write_timestamped_csv,
+    write_timestamped_txt,
+    write_transcript_json,
+)
 from src.utils import unique_path
-from src.video_cutter import generate_short_from_text
+from src.video_cutter import generate_short_from_text, generate_video_with_subtitles
 
 
 ensure_directories()
@@ -36,36 +57,51 @@ TRANSLATIONS = {
         "home_eyebrow": "Apresentacao inicial",
         "home_title": "Escolha o fluxo e siga sem precisar entender Streamlit.",
         "home_body": (
-            "A pagina inicial apresenta os dois recursos atuais do projeto. "
+            "A pagina inicial apresenta as quatro rotas atuais do projeto. "
             "Use o menu lateral para entrar diretamente no fluxo desejado."
         ),
         "home_stat_one_label": "Fluxos atuais",
-        "home_stat_one_value": "2",
+        "home_stat_one_value": "4",
         "home_stat_two_label": "Upload maximo",
         "home_stat_two_value": "1 GB",
         "home_stat_three_label": "Idioma da interface",
         "home_stat_three_value": "PT / EN",
         "clean_audio_title": "Limpar audio para DaVinci Resolve",
         "clean_audio_description": "Transcreve, remove silencias e gera entregaveis para edicao.",
+        "transcription_title": "Transcrever video com timestamps",
+        "transcription_description": "Gera a transcricao segmentada com tempos para revisao e copia.",
         "shorts_title": "Gerar Shorts",
         "shorts_description": "Encontra um trecho exato no texto e gera um video vertical.",
+        "subtitle_burn_title": "Adicionar legenda no video",
+        "subtitle_burn_description": "Queima a legenda no video com o estilo atual ou com um arquivo enviado.",
         "nav_clean_audio": "Limpar audio",
+        "nav_transcription": "Transcricao com timestamps",
         "nav_shorts": "Gerar Shorts",
+        "nav_subtitle_burn": "Adicionar legenda no video",
         "back_home": "Voltar a apresentacao",
         "sidebar_title": "Menu",
-        "sidebar_caption": "Escolha uma das duas rotas disponiveis.",
+        "sidebar_caption": "Escolha uma das quatro rotas disponiveis.",
         "language_label": "Idioma / Language",
         "advanced_settings": "Configuracoes avancadas",
         "model_label": "Modelo Whisper",
         "device_label": "Dispositivo",
         "home_cta_clean": "Abrir limpeza de audio",
+        "home_cta_transcription": "Abrir transcricao",
         "home_cta_shorts": "Abrir Gerador de Shorts",
+        "home_cta_subtitle_burn": "Abrir legenda no video",
         "audio_header": "Limpeza de audio",
+        "transcription_header": "Transcricao com timestamps",
         "video_header": "Geracao de Shorts",
+        "subtitle_burn_header": "Adicionar legenda no video",
         "upload_audio": "Enviar audio",
+        "upload_media": "Enviar video ou audio",
         "upload_video": "Enviar video",
+        "upload_video_subtitle": "Enviar video para legenda",
+        "upload_subtitle_file": "Enviar arquivo de legenda",
+        "upload_subtitle_file_help": "Opcional. Se enviar um arquivo .ASS ou .SRT, ele sera usado no video.",
         "upload_audio_help": "Aceita arquivos de audio com ate 1 GB.",
         "upload_video_help": "Aceita arquivos de video com ate 1 GB.",
+        "upload_media_help": "Aceita arquivos de video ou audio com ate 1 GB.",
         "script_text": "Texto do roteiro",
         "script_placeholder": "Cole aqui o roteiro completo.",
         "silence_threshold": "Limiar de silencio (dB)",
@@ -86,8 +122,24 @@ TRANSLATIONS = {
         "progress_audio_saving_reports": "Salvando relatorios",
         "progress_audio_done": "Limpeza concluida",
         "cuda_fallback_warning": "CUDA falhou neste ambiente; o processamento continuou em CPU.",
+        "progress_transcription_title": "Gerando transcricao...",
+        "progress_transcription_loading_model": "Carregando modelo Whisper",
+        "progress_transcription_transcribing": "Transcrevendo midia",
+        "progress_transcription_exporting": "Exportando arquivos",
+        "progress_transcription_done": "Transcricao concluida",
+        "progress_burn_title": "Adicionando legenda ao video...",
+        "progress_burn_transcribing": "Transcrevendo video",
+        "progress_burn_building_subtitles": "Gerando legenda estilizada",
+        "progress_burn_rendering_video": "Renderizando video com legenda",
+        "progress_burn_saving_metadata": "Salvando metadados",
+        "progress_burn_done": "Video legendado concluido",
         "transcript_label": "Transcricao",
+        "transcript_timestamps": "Transcricao com timestamps",
+        "transcript_segments": "Segmentos",
         "downloads_label": "Downloads",
+        "download_transcript_txt": "Baixar TXT com timestamps",
+        "download_transcript_csv": "Baixar CSV",
+        "download_transcript_json": "Baixar JSON",
         "download_cleaned_wav": "Baixar WAV limpo",
         "download_cleaned_mp3": "Baixar MP3 limpo",
         "download_report_json": "Baixar relatorio JSON",
@@ -104,12 +156,15 @@ TRANSLATIONS = {
         "zoom_out": "Zoom out do video",
         "zoom_out_help": "Aumente para abrir espaco apenas no topo e no rodape com fundo desfocado.",
         "subtitle_color": "Cor da legenda",
-        "subtitle_highlight_color": "Cor de destaque",
+        "subtitle_highlight_color": "Cor da palavra ativa",
         "subtitle_font_size": "Tamanho da fonte",
         "subtitle_outline_size": "Espessura do contorno",
         "subtitle_shadow_size": "Sombra",
-        "subtitle_margin_v": "Posição vertical",
+        "subtitle_margin_v": "Altura da legenda",
         "subtitle_spacing": "Espaçamento entre letras",
+        "subtitle_base_font": "Fonte principal",
+        "subtitle_accent_font": "Fonte de destaque",
+        "subtitle_accent_last_word": "Destacar ultima palavra",
         "subtitle_style": "Estilo da legenda",
         "match_threshold": "Limite de correspondencia",
         "generate_shorts": "Gerar Shorts",
@@ -134,45 +189,72 @@ TRANSLATIONS = {
         "download_short_srt": "Baixar legenda SRT",
         "download_short_metadata": "Baixar metadados",
         "download_short_thumbnail": "Baixar thumbnail",
+        "download_burned_video": "Baixar video com legenda",
+        "download_used_subtitles": "Baixar legenda usada",
+        "download_generated_ass": "Baixar legenda ASS gerada",
+        "download_generated_srt": "Baixar legenda SRT gerada",
+        "subtitle_source": "Fonte da legenda",
+        "subtitle_source_auto": "Gerada automaticamente",
+        "subtitle_source_uploaded": "Arquivo enviado",
+        "subtitle_optional_note": "Se voce enviar um arquivo de legenda, ele tera prioridade. Se nao enviar, o app gera automaticamente com o estilo atual.",
+        "transcribe_media": "Transcrever midia",
+        "burn_subtitles": "Aplicar legenda",
         "davinci_ready": "Pronto para o DaVinci Resolve",
         "shorts_two_at_once": "Ate 2 Shorts por vez",
         "vertical_with_subtitles": "Formato vertical com legendas",
+        "transcription_card_hint": "Transcricao pronta para revisão e copia.",
+        "subtitle_burn_card_hint": "Legenda pronta com um clique, com opcao de arquivo externo.",
     },
     "en": {
         "app_tagline": "Local assistant for cleaning audio and generating Shorts from long videos.",
         "home_eyebrow": "Home presentation",
         "home_title": "Pick a workflow and get started without needing to learn Streamlit.",
         "home_body": (
-            "The home screen introduces the two current features in the project. "
+            "The home screen introduces the four current routes in the project. "
             "Use the sidebar to jump straight to the workflow you want."
         ),
         "home_stat_one_label": "Current flows",
-        "home_stat_one_value": "2",
+        "home_stat_one_value": "4",
         "home_stat_two_label": "Max upload",
         "home_stat_two_value": "1 GB",
         "home_stat_three_label": "Interface language",
         "home_stat_three_value": "PT / EN",
         "clean_audio_title": "Clean audio for DaVinci Resolve",
         "clean_audio_description": "Transcribes, removes silences, and builds editing deliverables.",
+        "transcription_title": "Transcribe video with timestamps",
+        "transcription_description": "Creates a segmented transcript with times for review and copying.",
         "shorts_title": "Generate Shorts",
         "shorts_description": "Finds an exact excerpt in the transcript and creates a vertical video.",
+        "subtitle_burn_title": "Add subtitles to video",
+        "subtitle_burn_description": "Burns subtitles into the video using the current style or an uploaded file.",
         "nav_clean_audio": "Clean audio",
+        "nav_transcription": "Transcript with timestamps",
         "nav_shorts": "Generate Shorts",
+        "nav_subtitle_burn": "Add subtitles to video",
         "back_home": "Back to presentation",
         "sidebar_title": "Menu",
-        "sidebar_caption": "Choose one of the two available routes.",
+        "sidebar_caption": "Choose one of the four available routes.",
         "language_label": "Idioma / Language",
         "advanced_settings": "Advanced settings",
         "model_label": "Whisper model",
         "device_label": "Device",
         "home_cta_clean": "Open audio cleanup",
+        "home_cta_transcription": "Open transcription",
         "home_cta_shorts": "Open Shorts generator",
+        "home_cta_subtitle_burn": "Open subtitle burner",
         "audio_header": "Audio cleanup",
+        "transcription_header": "Transcript with timestamps",
         "video_header": "Shorts generation",
+        "subtitle_burn_header": "Add subtitles to video",
         "upload_audio": "Upload audio",
+        "upload_media": "Upload video or audio",
         "upload_video": "Upload video",
+        "upload_video_subtitle": "Upload video to subtitle",
+        "upload_subtitle_file": "Upload subtitle file",
+        "upload_subtitle_file_help": "Optional. If you upload an .ASS or .SRT file, it will be used in the video.",
         "upload_audio_help": "Accepts audio files up to 1 GB.",
         "upload_video_help": "Accepts video files up to 1 GB.",
+        "upload_media_help": "Accepts video or audio files up to 1 GB.",
         "script_text": "Script text",
         "script_placeholder": "Paste the full script here.",
         "silence_threshold": "Silence threshold (dB)",
@@ -193,8 +275,24 @@ TRANSLATIONS = {
         "progress_audio_saving_reports": "Saving reports",
         "progress_audio_done": "Cleanup finished",
         "cuda_fallback_warning": "CUDA failed in this environment; processing continued on CPU.",
+        "progress_transcription_title": "Generating transcript...",
+        "progress_transcription_loading_model": "Loading Whisper model",
+        "progress_transcription_transcribing": "Transcribing media",
+        "progress_transcription_exporting": "Exporting files",
+        "progress_transcription_done": "Transcript finished",
+        "progress_burn_title": "Adding subtitles to video...",
+        "progress_burn_transcribing": "Transcribing video",
+        "progress_burn_building_subtitles": "Generating styled subtitles",
+        "progress_burn_rendering_video": "Rendering video with subtitles",
+        "progress_burn_saving_metadata": "Saving metadata",
+        "progress_burn_done": "Subtitled video finished",
         "transcript_label": "Transcript",
+        "transcript_timestamps": "Transcript with timestamps",
+        "transcript_segments": "Segments",
         "downloads_label": "Downloads",
+        "download_transcript_txt": "Download timestamped TXT",
+        "download_transcript_csv": "Download CSV",
+        "download_transcript_json": "Download JSON",
         "download_cleaned_wav": "Download cleaned WAV",
         "download_cleaned_mp3": "Download cleaned MP3",
         "download_report_json": "Download JSON report",
@@ -211,12 +309,15 @@ TRANSLATIONS = {
         "zoom_out": "Video zoom out",
         "zoom_out_help": "Increase it to open space only at the top and bottom with a blurred background.",
         "subtitle_color": "Subtitle color",
-        "subtitle_highlight_color": "Highlight color",
+        "subtitle_highlight_color": "Active word color",
         "subtitle_font_size": "Font size",
         "subtitle_outline_size": "Outline thickness",
         "subtitle_shadow_size": "Shadow",
-        "subtitle_margin_v": "Vertical position",
+        "subtitle_margin_v": "Subtitle height",
         "subtitle_spacing": "Letter spacing",
+        "subtitle_base_font": "Base font",
+        "subtitle_accent_font": "Accent font",
+        "subtitle_accent_last_word": "Highlight last word",
         "subtitle_style": "Subtitle style",
         "match_threshold": "Match threshold",
         "generate_shorts": "Generate Shorts",
@@ -241,9 +342,21 @@ TRANSLATIONS = {
         "download_short_srt": "Download SRT subtitles",
         "download_short_metadata": "Download metadata",
         "download_short_thumbnail": "Download thumbnail",
+        "download_burned_video": "Download subtitled video",
+        "download_used_subtitles": "Download used subtitles",
+        "download_generated_ass": "Download generated ASS",
+        "download_generated_srt": "Download generated SRT",
+        "subtitle_source": "Subtitle source",
+        "subtitle_source_auto": "Auto-generated",
+        "subtitle_source_uploaded": "Uploaded file",
+        "subtitle_optional_note": "If you upload a subtitle file, it wins. Otherwise the app generates one automatically with the current style.",
+        "transcribe_media": "Transcribe media",
+        "burn_subtitles": "Apply subtitles",
         "davinci_ready": "Ready for DaVinci Resolve",
         "shorts_two_at_once": "Up to 2 Shorts at once",
         "vertical_with_subtitles": "Vertical format with subtitles",
+        "transcription_card_hint": "Ready for review and copy.",
+        "subtitle_burn_card_hint": "Burn subtitles with one click, or use your own file.",
     },
 }
 
@@ -260,6 +373,8 @@ def _set_view(view: str) -> None:
     if current_view != view:
         st.session_state.pop("audio_last_result", None)
         st.session_state.pop("shorts_last_results", None)
+        st.session_state.pop("transcription_last_result", None)
+        st.session_state.pop("subtitle_burn_last_result", None)
     st.session_state.view = view
 
 
@@ -296,6 +411,139 @@ def _render_audio_result(result: dict[str, object]) -> None:
     _download_button(result["davinci_csv"], t("download_davinci_csv"), "text/csv")
 
 
+def _render_transcription_result(result: dict[str, object]) -> None:
+    st.subheader(t("transcript_timestamps"))
+    st.text_area(
+        t("transcript_timestamps"),
+        value=result["formatted_text"],
+        height=320,
+    )
+    st.subheader(t("transcript_segments"))
+    st.dataframe(result["rows"], use_container_width=True, hide_index=True)
+    st.subheader(t("downloads_label"))
+    _download_button(result["txt"], t("download_transcript_txt"), "text/plain")
+    _download_button(result["csv"], t("download_transcript_csv"), "text/csv")
+    _download_button(result["json"], t("download_transcript_json"), "application/json")
+
+
+def _render_subtitle_burn_result(result: dict[str, object]) -> None:
+    payload = result["payload"]
+    st.subheader(t("subtitle_burn_header"))
+    st.write(
+        {
+            t("subtitle_source"): t("subtitle_source_auto") if payload.get("subtitle_source") == "auto" else t("subtitle_source_uploaded"),
+            t("subtitle_color"): payload.get("subtitle_color", DEFAULT_SHORTS_SUBTITLE_COLOR),
+            t("subtitle_highlight_color"): payload.get("subtitle_highlight_color", DEFAULT_SHORTS_SUBTITLE_HIGHLIGHT_COLOR),
+            t("subtitle_font_size"): payload.get("subtitle_font_size", DEFAULT_SHORTS_SUBTITLE_FONT_SIZE),
+            t("subtitle_outline_size"): payload.get("subtitle_outline_size", DEFAULT_SHORTS_SUBTITLE_OUTLINE_SIZE),
+            t("subtitle_shadow_size"): payload.get("subtitle_shadow_size", DEFAULT_SHORTS_SUBTITLE_SHADOW_SIZE),
+            t("subtitle_margin_v"): payload.get("subtitle_margin_v", DEFAULT_SHORTS_SUBTITLE_MARGIN_V),
+            t("subtitle_spacing"): payload.get("subtitle_spacing", DEFAULT_SHORTS_SUBTITLE_SPACING),
+            t("subtitle_base_font"): payload.get("subtitle_base_font", DEFAULT_SHORTS_SUBTITLE_BASE_FONT),
+            t("subtitle_accent_font"): payload.get("subtitle_accent_font", DEFAULT_SHORTS_SUBTITLE_ACCENT_FONT),
+            t("subtitle_accent_last_word"): payload.get("subtitle_accent_last_word", DEFAULT_SHORTS_SUBTITLE_ACCENT_LAST_WORD),
+        }
+    )
+    st.subheader(t("downloads_label"))
+    _download_button(result["video"], t("download_burned_video"), "video/mp4")
+    if payload.get("subtitle_source") == "auto":
+        if result.get("ass"):
+            _download_button(result["ass"], t("download_generated_ass"), "text/plain")
+        if result.get("srt"):
+            _download_button(result["srt"], t("download_generated_srt"), "text/plain")
+    elif result.get("subtitle_file"):
+        _download_button(result["subtitle_file"], t("download_used_subtitles"), "text/plain")
+
+
+def _render_subtitle_style_controls(key_prefix: str = "shorts") -> dict[str, object]:
+    with st.expander(t("subtitle_style"), expanded=False):
+        style_cols = st.columns(2)
+        with style_cols[0]:
+            subtitle_color = st.color_picker(
+                t("subtitle_color"),
+                DEFAULT_SHORTS_SUBTITLE_COLOR,
+                key=f"{key_prefix}_subtitle_color",
+            )
+            subtitle_highlight_color = st.color_picker(
+                t("subtitle_highlight_color"),
+                DEFAULT_SHORTS_SUBTITLE_HIGHLIGHT_COLOR,
+                key=f"{key_prefix}_subtitle_highlight_color",
+            )
+            subtitle_base_font = st.selectbox(
+                t("subtitle_base_font"),
+                options=SHORTS_SUBTITLE_FONT_OPTIONS,
+                index=SHORTS_SUBTITLE_FONT_OPTIONS.index(DEFAULT_SHORTS_SUBTITLE_BASE_FONT),
+                key=f"{key_prefix}_subtitle_base_font",
+            )
+        with style_cols[1]:
+            subtitle_accent_font = st.selectbox(
+                t("subtitle_accent_font"),
+                options=SHORTS_SUBTITLE_FONT_OPTIONS,
+                index=SHORTS_SUBTITLE_FONT_OPTIONS.index(DEFAULT_SHORTS_SUBTITLE_ACCENT_FONT),
+                key=f"{key_prefix}_subtitle_accent_font",
+            )
+            subtitle_accent_last_word = st.checkbox(
+                t("subtitle_accent_last_word"),
+                value=DEFAULT_SHORTS_SUBTITLE_ACCENT_LAST_WORD,
+                key=f"{key_prefix}_subtitle_accent_last_word",
+            )
+            subtitle_font_size = st.slider(
+                t("subtitle_font_size"),
+                56,
+                110,
+                DEFAULT_SHORTS_SUBTITLE_FONT_SIZE,
+                step=1,
+                key=f"{key_prefix}_subtitle_font_size",
+            )
+            subtitle_outline_size = st.slider(
+                t("subtitle_outline_size"),
+                0,
+                10,
+                DEFAULT_SHORTS_SUBTITLE_OUTLINE_SIZE,
+                step=1,
+                key=f"{key_prefix}_subtitle_outline_size",
+            )
+        tail_cols = st.columns(2)
+        with tail_cols[0]:
+            subtitle_shadow_size = st.slider(
+                t("subtitle_shadow_size"),
+                0,
+                8,
+                DEFAULT_SHORTS_SUBTITLE_SHADOW_SIZE,
+                step=1,
+                key=f"{key_prefix}_subtitle_shadow_size",
+            )
+        with tail_cols[1]:
+            subtitle_margin_v = st.slider(
+                t("subtitle_margin_v"),
+                80,
+                420,
+                DEFAULT_SHORTS_SUBTITLE_MARGIN_V,
+                step=5,
+                key=f"{key_prefix}_subtitle_margin_v",
+            )
+        subtitle_spacing = st.slider(
+            t("subtitle_spacing"),
+            0.0,
+            3.0,
+            DEFAULT_SHORTS_SUBTITLE_SPACING,
+            step=0.1,
+            key=f"{key_prefix}_subtitle_spacing",
+        )
+    return {
+        "subtitle_color": subtitle_color,
+        "subtitle_highlight_color": subtitle_highlight_color,
+        "subtitle_font_size": subtitle_font_size,
+        "subtitle_outline_size": subtitle_outline_size,
+        "subtitle_shadow_size": subtitle_shadow_size,
+        "subtitle_margin_v": subtitle_margin_v,
+        "subtitle_spacing": subtitle_spacing,
+        "subtitle_base_font": subtitle_base_font,
+        "subtitle_accent_font": subtitle_accent_font,
+        "subtitle_accent_last_word": subtitle_accent_last_word,
+    }
+
+
 def _render_shorts_results(results: list[dict[str, object]]) -> None:
     if not results:
         return
@@ -310,13 +558,16 @@ def _render_shorts_results(results: list[dict[str, object]]) -> None:
                 t("short_match_end_score"): payload["match_end_score"],
                 t("short_start"): payload["start"],
                 t("short_end"): payload["end"],
-                t("subtitle_color"): payload.get("subtitle_color", "#FFFFFF"),
-                t("subtitle_highlight_color"): payload.get("subtitle_highlight_color", "#3B82F6"),
-                t("subtitle_font_size"): payload.get("subtitle_font_size", 84),
-                t("subtitle_outline_size"): payload.get("subtitle_outline_size", 5),
-                t("subtitle_shadow_size"): payload.get("subtitle_shadow_size", 2),
-                t("subtitle_margin_v"): payload.get("subtitle_margin_v", 260),
-                t("subtitle_spacing"): payload.get("subtitle_spacing", 0.4),
+                t("subtitle_color"): payload.get("subtitle_color", DEFAULT_SHORTS_SUBTITLE_COLOR),
+                t("subtitle_highlight_color"): payload.get("subtitle_highlight_color", DEFAULT_SHORTS_SUBTITLE_HIGHLIGHT_COLOR),
+                t("subtitle_font_size"): payload.get("subtitle_font_size", DEFAULT_SHORTS_SUBTITLE_FONT_SIZE),
+                t("subtitle_outline_size"): payload.get("subtitle_outline_size", DEFAULT_SHORTS_SUBTITLE_OUTLINE_SIZE),
+                t("subtitle_shadow_size"): payload.get("subtitle_shadow_size", DEFAULT_SHORTS_SUBTITLE_SHADOW_SIZE),
+                t("subtitle_margin_v"): payload.get("subtitle_margin_v", DEFAULT_SHORTS_SUBTITLE_MARGIN_V),
+                t("subtitle_spacing"): payload.get("subtitle_spacing", DEFAULT_SHORTS_SUBTITLE_SPACING),
+                t("subtitle_base_font"): payload.get("subtitle_base_font", DEFAULT_SHORTS_SUBTITLE_BASE_FONT),
+                t("subtitle_accent_font"): payload.get("subtitle_accent_font", DEFAULT_SHORTS_SUBTITLE_ACCENT_FONT),
+                t("subtitle_accent_last_word"): payload.get("subtitle_accent_last_word", DEFAULT_SHORTS_SUBTITLE_ACCENT_LAST_WORD),
                 t("zoom_out"): payload.get("zoom_out", 0.0),
             }
         )
@@ -420,8 +671,12 @@ def _render_sidebar() -> None:
     st.sidebar.markdown("---")
     if st.sidebar.button(t("nav_clean_audio"), use_container_width=True):
         _set_view("clean_audio")
+    if st.sidebar.button(t("nav_transcription"), use_container_width=True):
+        _set_view("transcription")
     if st.sidebar.button(t("nav_shorts"), use_container_width=True):
         _set_view("shorts")
+    if st.sidebar.button(t("nav_subtitle_burn"), use_container_width=True):
+        _set_view("subtitle_burn")
     st.sidebar.markdown("---")
     with st.sidebar.expander(t("advanced_settings"), expanded=False):
         st.selectbox(t("model_label"), ["small", "medium", "large-v3"], index=1, key="model_name")
@@ -447,8 +702,8 @@ def _render_home() -> None:
     metrics[2].metric(t("home_stat_three_label"), t("home_stat_three_value"))
 
     st.write("")
-    left, right = st.columns(2)
-    with left:
+    first_row = st.columns(2)
+    with first_row[0]:
         st.markdown(
             f"""
             <div class="storycut-card">
@@ -467,7 +722,28 @@ def _render_home() -> None:
         if st.button(t("home_cta_clean"), type="primary", use_container_width=True):
             _set_view("clean_audio")
             _rerun()
-    with right:
+    with first_row[1]:
+        st.markdown(
+            f"""
+            <div class="storycut-card">
+                <h3>{t("transcription_title")}</h3>
+                <p>{t("transcription_description")}</p>
+                <ul>
+                    <li>{t("upload_media_help")}</li>
+                    <li>{t("transcription_card_hint")}</li>
+                    <li>{t("download_transcript_txt")}</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='height: 0.4rem;'></div>", unsafe_allow_html=True)
+        if st.button(t("home_cta_transcription"), type="primary", use_container_width=True):
+            _set_view("transcription")
+            _rerun()
+
+    second_row = st.columns(2)
+    with second_row[0]:
         st.markdown(
             f"""
             <div class="storycut-card">
@@ -485,6 +761,25 @@ def _render_home() -> None:
         st.markdown("<div style='height: 0.4rem;'></div>", unsafe_allow_html=True)
         if st.button(t("home_cta_shorts"), type="primary", use_container_width=True):
             _set_view("shorts")
+            _rerun()
+    with second_row[1]:
+        st.markdown(
+            f"""
+            <div class="storycut-card">
+                <h3>{t("subtitle_burn_title")}</h3>
+                <p>{t("subtitle_burn_description")}</p>
+                <ul>
+                    <li>{t("upload_video_help")}</li>
+                    <li>{t("subtitle_optional_note")}</li>
+                    <li>{t("subtitle_burn_card_hint")}</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='height: 0.4rem;'></div>", unsafe_allow_html=True)
+        if st.button(t("home_cta_subtitle_burn"), type="primary", use_container_width=True):
+            _set_view("subtitle_burn")
             _rerun()
 
 
@@ -563,6 +858,144 @@ def _render_clean_audio() -> None:
         _render_audio_result(audio_result)
 
 
+def _render_transcription() -> None:
+    st.subheader(t("transcription_header"))
+    if st.button(t("back_home")):
+        _set_view("home")
+        _rerun()
+
+    uploaded_media = st.file_uploader(
+        t("upload_media"),
+        type=["mp4", "mov", "mkv", "wav", "mp3", "m4a", "aac"],
+        help=t("upload_media_help"),
+    )
+
+    if st.button(t("transcribe_media"), type="primary", disabled=uploaded_media is None):
+        st.session_state.transcription_last_result = None
+        progress_bar = None
+        progress_status = None
+        try:
+            progress_bar = st.progress(0)
+            progress_status = st.empty()
+            progress_status.info(t("progress_transcription_title"))
+            progress_messages = {
+                "loading_model": t("progress_transcription_loading_model"),
+                "transcribing": t("progress_transcription_transcribing"),
+                "transcription_cached": t("progress_audio_transcription_cached"),
+                "transcription_done": t("progress_transcription_exporting"),
+            }
+            progress_callback = _make_progress_updater(progress_bar, progress_status, progress_messages)
+            input_path = _save_upload(uploaded_media, UPLOADS_DIR)
+            transcript = transcribe_media(
+                input_path,
+                model_name=st.session_state.get("model_name", DEFAULT_WHISPER_MODEL),
+                device=st.session_state.get("device", "cuda"),
+                progress_callback=progress_callback,
+            )
+            segments = transcript["segments"]
+            export_stem = unique_path(TRANSCRIPTS_DIR, input_path.stem, ".txt").stem
+            txt_path = TRANSCRIPTS_DIR / f"{export_stem}.txt"
+            csv_path = TRANSCRIPTS_DIR / f"{export_stem}.csv"
+            json_path = TRANSCRIPTS_DIR / f"{export_stem}.json"
+            formatted_text = format_timestamped_transcript(segments)
+            write_timestamped_txt(txt_path, segments)
+            write_timestamped_csv(csv_path, segments)
+            write_transcript_json(json_path, transcript)
+            result = {
+                "transcript": transcript,
+                "rows": transcript_rows(segments),
+                "formatted_text": formatted_text,
+                "txt": txt_path,
+                "csv": csv_path,
+                "json": json_path,
+            }
+            st.session_state.transcription_last_result = result
+            if transcript.get("device") != st.session_state.get("device", "cuda"):
+                st.warning(t("cuda_fallback_warning"))
+            progress_bar.progress(100)
+            progress_status.success(t("progress_transcription_done"))
+        except Exception as exc:  # pragma: no cover - UI feedback
+            if progress_status is not None:
+                progress_status.error(str(exc))
+            st.error(str(exc))
+
+    transcription_result = st.session_state.get("transcription_last_result")
+    if transcription_result:
+        _render_transcription_result(transcription_result)
+
+
+def _render_subtitle_burn() -> None:
+    st.subheader(t("subtitle_burn_header"))
+    if st.button(t("back_home")):
+        _set_view("home")
+        _rerun()
+
+    uploaded_video = st.file_uploader(
+        t("upload_video_subtitle"),
+        type=["mp4", "mov", "mkv"],
+        help=t("upload_video_help"),
+    )
+    uploaded_subtitle = st.file_uploader(
+        t("upload_subtitle_file"),
+        type=["ass", "srt"],
+        help=t("upload_subtitle_file_help"),
+    )
+    st.caption(t("subtitle_optional_note"))
+    subtitle_style = _render_subtitle_style_controls()
+
+    if st.button(t("burn_subtitles"), type="primary", disabled=uploaded_video is None):
+        st.session_state.subtitle_burn_last_result = None
+        progress_bar = None
+        progress_status = None
+        try:
+            progress_bar = st.progress(0)
+            progress_status = st.empty()
+            progress_status.info(t("progress_burn_title"))
+            progress_messages = {
+                "loading_model": t("progress_transcription_loading_model"),
+                "transcribing": t("progress_burn_transcribing"),
+                "transcription_cached": t("progress_audio_transcription_cached"),
+                "transcription_done": t("progress_burn_building_subtitles"),
+                "building_subtitles": t("progress_burn_building_subtitles"),
+                "rendering_video": t("progress_burn_rendering_video"),
+                "saving_metadata": t("progress_burn_saving_metadata"),
+            }
+            progress_callback = _make_progress_updater(progress_bar, progress_status, progress_messages)
+            input_path = _save_upload(uploaded_video, UPLOADS_DIR)
+            subtitle_path = _save_upload(uploaded_subtitle, UPLOADS_DIR) if uploaded_subtitle is not None else None
+            result = generate_video_with_subtitles(
+                input_path,
+                output_dir=SUBTITLED_VIDEOS_DIR,
+                model_name=st.session_state.get("model_name", DEFAULT_WHISPER_MODEL),
+                device=st.session_state.get("device", "cuda"),
+                subtitle_path=subtitle_path,
+                subtitle_color=subtitle_style["subtitle_color"],
+                subtitle_highlight_color=subtitle_style["subtitle_highlight_color"],
+                subtitle_font_size=subtitle_style["subtitle_font_size"],
+                subtitle_outline_size=subtitle_style["subtitle_outline_size"],
+                subtitle_shadow_size=subtitle_style["subtitle_shadow_size"],
+                subtitle_margin_v=subtitle_style["subtitle_margin_v"],
+                subtitle_spacing=subtitle_style["subtitle_spacing"],
+                subtitle_base_font=subtitle_style["subtitle_base_font"],
+                subtitle_accent_font=subtitle_style["subtitle_accent_font"],
+                subtitle_accent_last_word=subtitle_style["subtitle_accent_last_word"],
+                progress_callback=progress_callback,
+            )
+            if result["payload"].get("subtitle_source") == "auto" and result["payload"].get("device") != st.session_state.get("device", "cuda"):
+                st.warning(t("cuda_fallback_warning"))
+            st.session_state.subtitle_burn_last_result = result
+            progress_bar.progress(100)
+            progress_status.success(t("progress_burn_done"))
+        except Exception as exc:  # pragma: no cover - UI feedback
+            if progress_status is not None:
+                progress_status.error(str(exc))
+            st.error(str(exc))
+
+    subtitle_burn_result = st.session_state.get("subtitle_burn_last_result")
+    if subtitle_burn_result:
+        _render_subtitle_burn_result(subtitle_burn_result)
+
+
 def _render_shorts() -> None:
     st.subheader(t("video_header"))
     if st.button(t("back_home")):
@@ -604,17 +1037,7 @@ def _render_shorts() -> None:
     with col2:
         end_padding_seconds = st.slider(t("end_padding"), 0.0, 2.0, DEFAULT_END_PADDING_SECONDS, step=0.05)
     zoom_out = st.slider(t("zoom_out"), 0.0, 0.4, 0.0, step=0.05, help=t("zoom_out_help"))
-    with st.expander(t("subtitle_style"), expanded=False):
-        subtitle_color = st.color_picker(t("subtitle_color"), "#FFFFFF")
-        subtitle_highlight_color = st.color_picker(t("subtitle_highlight_color"), "#3B82F6")
-        style_col1, style_col2 = st.columns(2)
-        with style_col1:
-            subtitle_font_size = st.slider(t("subtitle_font_size"), 56, 110, 84, step=1)
-            subtitle_outline_size = st.slider(t("subtitle_outline_size"), 0, 10, 5, step=1)
-            subtitle_shadow_size = st.slider(t("subtitle_shadow_size"), 0, 8, 2, step=1)
-        with style_col2:
-            subtitle_margin_v = st.slider(t("subtitle_margin_v"), 80, 360, 260, step=5)
-            subtitle_spacing = st.slider(t("subtitle_spacing"), 0.0, 3.0, 0.4, step=0.1)
+    subtitle_style = _render_subtitle_style_controls()
 
     if st.button(t("generate_shorts"), type="primary", disabled=uploaded_video is None):
         st.session_state.shorts_last_results = []
@@ -656,13 +1079,16 @@ def _render_shorts() -> None:
                     end_padding_seconds=end_padding_seconds,
                     start_threshold=match_threshold,
                     end_threshold=match_threshold,
-                    subtitle_color=subtitle_color,
-                    subtitle_highlight_color=subtitle_highlight_color,
-                    subtitle_font_size=subtitle_font_size,
-                    subtitle_outline_size=subtitle_outline_size,
-                    subtitle_shadow_size=subtitle_shadow_size,
-                    subtitle_margin_v=subtitle_margin_v,
-                    subtitle_spacing=subtitle_spacing,
+                    subtitle_color=subtitle_style["subtitle_color"],
+                    subtitle_highlight_color=subtitle_style["subtitle_highlight_color"],
+                    subtitle_font_size=subtitle_style["subtitle_font_size"],
+                    subtitle_outline_size=subtitle_style["subtitle_outline_size"],
+                    subtitle_shadow_size=subtitle_style["subtitle_shadow_size"],
+                    subtitle_margin_v=subtitle_style["subtitle_margin_v"],
+                    subtitle_spacing=subtitle_style["subtitle_spacing"],
+                    subtitle_base_font=subtitle_style["subtitle_base_font"],
+                    subtitle_accent_font=subtitle_style["subtitle_accent_font"],
+                    subtitle_accent_last_word=subtitle_style["subtitle_accent_last_word"],
                     zoom_out=zoom_out,
                     progress_callback=progress_callback,
                 )
@@ -698,7 +1124,11 @@ _render_sidebar()
 
 if st.session_state.view == "clean_audio":
     _render_clean_audio()
+elif st.session_state.view == "transcription":
+    _render_transcription()
 elif st.session_state.view == "shorts":
     _render_shorts()
+elif st.session_state.view == "subtitle_burn":
+    _render_subtitle_burn()
 else:
     _render_home()
